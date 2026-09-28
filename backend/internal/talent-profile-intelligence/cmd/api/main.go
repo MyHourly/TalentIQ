@@ -9,54 +9,65 @@ import (
 	"talentiq/talent-profile-intelligence/internal/config"
 	"talentiq/talent-profile-intelligence/internal/database"
 	"talentiq/talent-profile-intelligence/internal/handler"
+	"talentiq/talent-profile-intelligence/internal/logger"
 )
 
 func main() {
-	// Load application configuration from environment variables.
+	// Load application configuration.
 	cfg := config.Load()
+
+	// Create the application logger.
+	appLogger := logger.New(cfg.AppEnv)
+
+	appLogger.Info(
+		"starting talent profile intelligence service",
+		"environment", cfg.AppEnv,
+		"port", cfg.ServerPort,
+	)
 
 	// Create a root context for application startup.
 	ctx := context.Background()
 
-	// Connect to PostgreSQL before starting the HTTP server.
+	// Connect to PostgreSQL.
 	db, err := database.NewPostgres(ctx, cfg)
 	if err != nil {
-		log.Fatalf(
-			"database initialization failed: %v",
-			err,
+		appLogger.Error(
+			"database initialization failed",
+			"error", err,
 		)
+
+		// Exit because the service cannot operate without
+		// its required database.
+		log.Fatal(err)
 	}
 
-	// Close the database connection pool when the application exits.
+	// Close the database connection pool when the
+	// application stops.
 	defer db.Close()
 
-	log.Println("PostgreSQL connection established")
+	appLogger.Info("PostgreSQL connection established")
 
-	// Create the Gin HTTP router.
+	// Create the Gin router.
 	router := gin.Default()
 
-	// Liveness endpoint.
-	//
-	// This checks whether the application itself is running.
+	// Basic application health check.
 	router.GET("/health", handler.Health)
 
-	// Readiness endpoint.
-	//
-	// This checks whether the application can communicate
-	// with PostgreSQL.
+	// Database readiness check.
 	router.GET("/ready", handler.Ready(db))
 
-	// Start the HTTP server.
-	log.Printf(
-		"%s starting on port %s",
-		cfg.AppName,
-		cfg.ServerPort,
+	appLogger.Info(
+		"HTTP server started",
+		"port", cfg.ServerPort,
 	)
 
+	// Start the HTTP server.
 	if err := router.Run(":" + cfg.ServerPort); err != nil {
-		log.Fatalf(
-			"failed to start HTTP server: %v",
-			err,
+		appLogger.Error(
+			"HTTP server stopped with error",
+			"error", err,
 		)
+
+		log.Fatal(err)
 	}
 }
