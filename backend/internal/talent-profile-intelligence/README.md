@@ -46,3 +46,29 @@ Talent Profile Intelligence
     +------> PostgreSQL
     |
     +------> Application Logs
+
+## Repository Layer
+
+The repository layer is responsible for direct communication with PostgreSQL.
+
+The Talent Profile repository provides:
+
+- Create talent profile
+- Get talent profile by ID
+- List talent profiles
+- Update talent profile
+- Soft delete talent profile
+
+The application follows this dependency flow:
+
+```text
+Handler
+   |
+   v
+Service
+   |
+   v
+Repository
+   |
+   v
+PostgreSQL

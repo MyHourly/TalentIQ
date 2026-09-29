@@ -10,6 +10,7 @@ import (
 	"talentiq/talent-profile-intelligence/internal/database"
 	"talentiq/talent-profile-intelligence/internal/handler"
 	"talentiq/talent-profile-intelligence/internal/logger"
+	"talentiq/talent-profile-intelligence/internal/repository"
 )
 
 func main() {
@@ -36,16 +37,26 @@ func main() {
 			"error", err,
 		)
 
-		// Exit because the service cannot operate without
-		// its required database.
 		log.Fatal(err)
 	}
 
-	// Close the database connection pool when the
-	// application stops.
+	// Always close the database pool when the application stops.
 	defer db.Close()
 
 	appLogger.Info("PostgreSQL connection established")
+
+	// Create the Talent Profile repository.
+	//
+	// The repository will handle all direct PostgreSQL
+	// operations for the Talent Profile domain.
+	talentProfileRepository := repository.NewTalentProfileRepository(
+		db,
+		appLogger.Logger,
+	)
+
+	// Keep the repository referenced until the service layer
+	// is introduced in the next lesson.
+	_ = talentProfileRepository
 
 	// Create the Gin router.
 	router := gin.Default()
