@@ -25,9 +25,9 @@ func New(environment string) *Logger {
 	// Production logs use JSON so log aggregation tools can
 	// process them more easily.
 	if environment == "development" {
-		handler = slog.NewTextHandler(os.Stdout,handlerOptions,)
+		handler = slog.NewTextHandler(os.Stdout, handlerOptions)
 	} else {
-		handler = slog.NewJSONHandler(os.Stdout,handlerOptions,)
+		handler = slog.NewJSONHandler(os.Stdout, handlerOptions)
 	}
 
 	return &Logger{

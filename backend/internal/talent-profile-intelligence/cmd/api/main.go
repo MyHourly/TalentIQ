@@ -11,13 +11,14 @@ import (
 	"talentiq/talent-profile-intelligence/internal/handler"
 	"talentiq/talent-profile-intelligence/internal/logger"
 	"talentiq/talent-profile-intelligence/internal/repository"
+	"talentiq/talent-profile-intelligence/internal/service"
 )
 
 func main() {
 	// Load application configuration.
 	cfg := config.Load()
 
-	// Create the application logger.
+	// Create application logger.
 	appLogger := logger.New(cfg.AppEnv)
 
 	appLogger.Info(
@@ -26,10 +27,10 @@ func main() {
 		"port", cfg.ServerPort,
 	)
 
-	// Create a root context for application startup.
+	// Root context used during application startup.
 	ctx := context.Background()
 
-	// Connect to PostgreSQL.
+	// Create PostgreSQL connection pool.
 	db, err := database.NewPostgres(ctx, cfg)
 	if err != nil {
 		appLogger.Error(
@@ -40,40 +41,56 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Always close the database pool when the application stops.
+	// Close database connections when application exits.
 	defer db.Close()
 
-	appLogger.Info("PostgreSQL connection established")
-
-	// Create the Talent Profile repository.
-	//
-	// The repository will handle all direct PostgreSQL
-	// operations for the Talent Profile domain.
-	talentProfileRepository := repository.NewTalentProfileRepository(
-		db,
-		appLogger.Logger,
+	appLogger.Info(
+		"PostgreSQL connection established",
 	)
 
-	// Keep the repository referenced until the service layer
-	// is introduced in the next lesson.
-	_ = talentProfileRepository
+	// Create repository.
+	talentProfileRepository :=
+		repository.NewTalentProfileRepository(
+			db,
+			appLogger.Logger,
+		)
 
-	// Create the Gin router.
+	// Create service.
+	talentProfileService :=
+		service.NewTalentProfileService(
+			talentProfileRepository,
+			appLogger.Logger,
+		)
+
+	// The service will be injected into HTTP handlers
+	// in the next lesson.
+	_ = talentProfileService
+
+	// Create Gin router.
 	router := gin.Default()
 
-	// Basic application health check.
-	router.GET("/health", handler.Health)
+	// Health endpoint.
+	router.GET(
+		"/health",
+		handler.Health,
+	)
 
-	// Database readiness check.
-	router.GET("/ready", handler.Ready(db))
+	// Readiness endpoint.
+	router.GET(
+		"/ready",
+		handler.Ready(db),
+	)
 
 	appLogger.Info(
 		"HTTP server started",
 		"port", cfg.ServerPort,
 	)
 
-	// Start the HTTP server.
-	if err := router.Run(":" + cfg.ServerPort); err != nil {
+	// Start HTTP server.
+	if err := router.Run(
+		":" + cfg.ServerPort,
+	); err != nil {
+
 		appLogger.Error(
 			"HTTP server stopped with error",
 			"error", err,

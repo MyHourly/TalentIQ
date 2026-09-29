@@ -25,7 +25,7 @@ func Load() Config {
 	return Config{
 		// Application settings.
 		ServerPort: getEnv("SERVER_PORT", "8080"),
-		AppName:    getEnv(
+		AppName: getEnv(
 			"APP_NAME",
 			"talent-profile-intelligence",
 		),

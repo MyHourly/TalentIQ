@@ -37,16 +37,16 @@ func Ready(db *pgxpool.Pool) gin.HandlerFunc {
 		// Check the PostgreSQL connection.
 		if err := db.Ping(ctx); err != nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{
-				"status":  "NOT_READY",
-				"service": "talent-profile-intelligence",
+				"status":   "NOT_READY",
+				"service":  "talent-profile-intelligence",
 				"database": "DOWN",
 			})
 			return
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"status":  "READY",
-			"service": "talent-profile-intelligence",
+			"status":   "READY",
+			"service":  "talent-profile-intelligence",
 			"database": "UP",
 		})
 	}

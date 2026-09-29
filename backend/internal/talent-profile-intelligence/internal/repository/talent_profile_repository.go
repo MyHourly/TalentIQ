@@ -535,7 +535,6 @@ func (r *talentProfileRepository) Delete(
 
 	return nil
 
-	
 }
 
 // ExistsByEmployeeCode checks whether an active talent profile
