@@ -72,3 +72,25 @@ Repository
    |
    v
 PostgreSQL
+
+## REST API
+
+The Talent Profile Intelligence service exposes versioned REST APIs
+under `/api/v1`.
+
+### Talent Profile Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/v1/talent-profiles` | Create a talent profile |
+| GET | `/api/v1/talent-profiles` | List talent profiles |
+| GET | `/api/v1/talent-profiles/:id` | Get a profile |
+| PUT | `/api/v1/talent-profiles/:id` | Update a profile |
+| DELETE | `/api/v1/talent-profiles/:id` | Deactivate a profile |
+
+### Pagination
+
+The list endpoint supports:
+
+```text
+GET /api/v1/talent-profiles?page=1&limit=20

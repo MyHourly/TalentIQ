@@ -62,9 +62,12 @@ func main() {
 			appLogger.Logger,
 		)
 
-	// The service will be injected into HTTP handlers
-	// in the next lesson.
-	_ = talentProfileService
+	// Create Talent Profile HTTP handler.
+	talentProfileHandler :=
+		handler.NewTalentProfileHandler(
+			talentProfileService,
+			appLogger.Logger,
+		)
 
 	// Create Gin router.
 	router := gin.Default()
@@ -80,6 +83,38 @@ func main() {
 		"/ready",
 		handler.Ready(db),
 	)
+
+	// Versioned Talent Profile API.
+	v1 := router.Group("/api/v1")
+	{
+		talentProfiles := v1.Group("/talent-profiles")
+		{
+			talentProfiles.POST(
+				"",
+				talentProfileHandler.Create,
+			)
+
+			talentProfiles.GET(
+				"",
+				talentProfileHandler.List,
+			)
+
+			talentProfiles.GET(
+				"/:id",
+				talentProfileHandler.GetByID,
+			)
+
+			talentProfiles.PUT(
+				"/:id",
+				talentProfileHandler.Update,
+			)
+
+			talentProfiles.DELETE(
+				"/:id",
+				talentProfileHandler.Delete,
+			)
+		}
+	}
 
 	appLogger.Info(
 		"HTTP server started",
