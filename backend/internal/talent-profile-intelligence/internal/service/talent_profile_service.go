@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"errors"
+
 	"fmt"
 	"log/slog"
 	"strings"
@@ -17,10 +17,6 @@ import (
 //
 // The HTTP handler will later convert these errors into
 // appropriate HTTP responses such as 400 or 409.
-var (
-	ErrInvalidTalentProfile = errors.New("invalid talent profile")
-	ErrEmployeeCodeExists   = errors.New("employee code already exists")
-)
 
 // TalentProfileService contains business operations related
 // to Talent Profiles.
