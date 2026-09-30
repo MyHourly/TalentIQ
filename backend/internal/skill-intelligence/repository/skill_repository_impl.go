@@ -144,3 +144,69 @@ func (r *PostgresSkillRepository) GetByID(
 
 	return &skill, nil
 }
+
+func (r *PostgresSkillRepository) Update(
+	ctx context.Context,
+	skill *model.Skill,
+) error {
+
+	query := `
+		UPDATE skills
+		SET
+			name = $1,
+			description = $2,
+			status = $3,
+			updated_at = $4
+		WHERE id = $5
+	`
+
+	result, err := r.db.Exec(
+		ctx,
+		query,
+		skill.Name,
+		skill.Description,
+		skill.Status,
+		skill.UpdatedAt,
+		skill.ID,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to update skill: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("skill not found")
+	}
+
+	return nil
+}
+
+func (r *PostgresSkillRepository) Deactivate(
+	ctx context.Context,
+	id string,
+) error {
+
+	query := `
+		UPDATE skills
+		SET
+			status = 'INACTIVE',
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1
+	`
+
+	result, err := r.db.Exec(
+		ctx,
+		query,
+		id,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to deactivate skill: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("skill not found")
+	}
+
+	return nil
+}

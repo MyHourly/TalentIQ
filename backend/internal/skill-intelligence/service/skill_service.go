@@ -39,3 +39,19 @@ func (s *SkillService) GetSkillByID(
 
 	return s.repository.GetByID(ctx, id)
 }
+
+func (s *SkillService) UpdateSkill(
+	ctx context.Context,
+	skill *model.Skill,
+) error {
+
+	return s.repository.Update(ctx, skill)
+}
+
+func (s *SkillService) DeactivateSkill(
+	ctx context.Context,
+	id string,
+) error {
+
+	return s.repository.Deactivate(ctx, id)
+}
