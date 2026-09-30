@@ -5,9 +5,10 @@ import (
 	"net/http"
 	"strconv"
 
+	"log/slog"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"log/slog"
 
 	"talentiq/talent-profile-intelligence/internal/dto"
 	"talentiq/talent-profile-intelligence/internal/repository"
@@ -40,7 +41,7 @@ func (h *TalentProfileHandler) Create(c *gin.Context) {
 
 	var request dto.TalentProfileCreateRequest
 
-	// Decode JSON request body.
+	// Decode the JSON request body.
 	if err := c.ShouldBindJSON(&request); err != nil {
 
 		h.logger.Warn(
@@ -48,20 +49,19 @@ func (h *TalentProfileHandler) Create(c *gin.Context) {
 			"error", err,
 		)
 
-		c.JSON(
+		writeError(
+			c,
 			http.StatusBadRequest,
-			gin.H{
-				"error": "invalid request body",
-			},
+			"invalid request body",
 		)
 
 		return
 	}
 
-	// Convert DTO into internal model.
+	// Convert the request DTO into the internal model.
 	profile := request.ToModel()
 
-	// Call business logic.
+	// Call the service layer to execute business logic.
 	created, err := h.service.Create(
 		c.Request.Context(),
 		profile,
@@ -72,11 +72,14 @@ func (h *TalentProfileHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// Convert model into response DTO.
+	// Convert the created model into a response DTO.
 	response := dto.FromTalentProfileModel(created)
 
-	c.JSON(
+	// Return a standardized success response.
+	writeSuccess(
+		c,
 		http.StatusCreated,
+		"Talent profile created successfully",
 		response,
 	)
 }
@@ -86,21 +89,21 @@ func (h *TalentProfileHandler) Create(c *gin.Context) {
 // GET /api/v1/talent-profiles/:id
 func (h *TalentProfileHandler) GetByID(c *gin.Context) {
 
-	id, err := uuid.Parse(
-		c.Param("id"),
-	)
+	// Convert the URL parameter into UUID.
+	id, err := uuid.Parse(c.Param("id"))
 
 	if err != nil {
-		c.JSON(
+
+		writeError(
+			c,
 			http.StatusBadRequest,
-			gin.H{
-				"error": "invalid talent profile id",
-			},
+			"invalid talent profile id",
 		)
 
 		return
 	}
 
+	// Retrieve the profile through the service layer.
 	profile, err := h.service.GetByID(
 		c.Request.Context(),
 		id,
@@ -111,10 +114,14 @@ func (h *TalentProfileHandler) GetByID(c *gin.Context) {
 		return
 	}
 
+	// Convert model into response DTO.
 	response := dto.FromTalentProfileModel(profile)
 
-	c.JSON(
+	// Return a standardized success response.
+	writeSuccess(
+		c,
 		http.StatusOK,
+		"Talent profile retrieved successfully",
 		response,
 	)
 }
@@ -124,6 +131,7 @@ func (h *TalentProfileHandler) GetByID(c *gin.Context) {
 // GET /api/v1/talent-profiles
 func (h *TalentProfileHandler) List(c *gin.Context) {
 
+	// Read pagination parameters.
 	page := parsePositiveInt(
 		c.Query("page"),
 		1,
@@ -134,13 +142,16 @@ func (h *TalentProfileHandler) List(c *gin.Context) {
 		20,
 	)
 
-	// Protect the API from unnecessarily large requests.
+	// Prevent clients from requesting an unnecessarily
+	// large number of records.
 	if limit > 100 {
 		limit = 100
 	}
 
+	// Calculate database offset.
 	offset := (page - 1) * limit
 
+	// Retrieve profiles from the service layer.
 	profiles, total, err := h.service.List(
 		c.Request.Context(),
 		limit,
@@ -152,6 +163,7 @@ func (h *TalentProfileHandler) List(c *gin.Context) {
 		return
 	}
 
+	// Convert models into response DTOs.
 	responses := make(
 		[]*dto.TalentProfileResponse,
 		0,
@@ -159,22 +171,27 @@ func (h *TalentProfileHandler) List(c *gin.Context) {
 	)
 
 	for _, profile := range profiles {
+
 		responses = append(
 			responses,
 			dto.FromTalentProfileModel(profile),
 		)
 	}
 
-	response := dto.TalentProfileListResponse{
+	// Build the existing pagination response.
+	listResponse := dto.TalentProfileListResponse{
 		Data:  responses,
 		Page:  page,
 		Limit: limit,
 		Total: total,
 	}
 
-	c.JSON(
+	// Wrap the list response in the standard API response.
+	writeSuccess(
+		c,
 		http.StatusOK,
-		response,
+		"Talent profiles retrieved successfully",
+		listResponse,
 	)
 }
 
@@ -183,16 +200,15 @@ func (h *TalentProfileHandler) List(c *gin.Context) {
 // PUT /api/v1/talent-profiles/:id
 func (h *TalentProfileHandler) Update(c *gin.Context) {
 
-	id, err := uuid.Parse(
-		c.Param("id"),
-	)
+	// Convert the URL parameter into UUID.
+	id, err := uuid.Parse(c.Param("id"))
 
 	if err != nil {
-		c.JSON(
+
+		writeError(
+			c,
 			http.StatusBadRequest,
-			gin.H{
-				"error": "invalid talent profile id",
-			},
+			"invalid talent profile id",
 		)
 
 		return
@@ -200,6 +216,7 @@ func (h *TalentProfileHandler) Update(c *gin.Context) {
 
 	var request dto.TalentProfileUpdateRequest
 
+	// Decode the JSON request body.
 	if err := c.ShouldBindJSON(&request); err != nil {
 
 		h.logger.Warn(
@@ -207,20 +224,19 @@ func (h *TalentProfileHandler) Update(c *gin.Context) {
 			"error", err,
 		)
 
-		c.JSON(
+		writeError(
+			c,
 			http.StatusBadRequest,
-			gin.H{
-				"error": "invalid request body",
-			},
+			"invalid request body",
 		)
 
 		return
 	}
 
-	// First retrieve the existing profile.
+	// Retrieve the existing profile first.
 	//
-	// We need employee_code because it is not changed
-	// by the update request.
+	// EmployeeCode is not updated by the update request,
+	// so we need the existing value.
 	existing, err := h.service.GetByID(
 		c.Request.Context(),
 		id,
@@ -231,11 +247,13 @@ func (h *TalentProfileHandler) Update(c *gin.Context) {
 		return
 	}
 
+	// Convert update DTO into the internal model.
 	profile := request.ToModel(
 		id,
 		existing.EmployeeCode,
 	)
 
+	// Update the profile through the service layer.
 	updated, err := h.service.Update(
 		c.Request.Context(),
 		profile,
@@ -246,10 +264,14 @@ func (h *TalentProfileHandler) Update(c *gin.Context) {
 		return
 	}
 
+	// Convert updated model into response DTO.
 	response := dto.FromTalentProfileModel(updated)
 
-	c.JSON(
+	// Return standardized success response.
+	writeSuccess(
+		c,
 		http.StatusOK,
+		"Talent profile updated successfully",
 		response,
 	)
 }
@@ -259,21 +281,21 @@ func (h *TalentProfileHandler) Update(c *gin.Context) {
 // DELETE /api/v1/talent-profiles/:id
 func (h *TalentProfileHandler) Delete(c *gin.Context) {
 
-	id, err := uuid.Parse(
-		c.Param("id"),
-	)
+	// Convert the URL parameter into UUID.
+	id, err := uuid.Parse(c.Param("id"))
 
 	if err != nil {
-		c.JSON(
+
+		writeError(
+			c,
 			http.StatusBadRequest,
-			gin.H{
-				"error": "invalid talent profile id",
-			},
+			"invalid talent profile id",
 		)
 
 		return
 	}
 
+	// Deactivate the profile through the service layer.
 	err = h.service.Delete(
 		c.Request.Context(),
 		id,
@@ -284,15 +306,16 @@ func (h *TalentProfileHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	c.JSON(
+	// Return standardized success response.
+	writeSuccess(
+		c,
 		http.StatusOK,
-		gin.H{
-			"message": "talent profile deactivated successfully",
-		},
+		"Talent profile deactivated successfully",
+		nil,
 	)
 }
 
-// handleServiceError converts known service errors
+// handleServiceError converts known service/repository errors
 // into appropriate HTTP responses.
 func (h *TalentProfileHandler) handleServiceError(
 	c *gin.Context,
@@ -300,60 +323,100 @@ func (h *TalentProfileHandler) handleServiceError(
 ) {
 
 	switch {
+
 	case errors.Is(
 		err,
 		service.ErrInvalidTalentProfile,
 	):
-		c.JSON(
+
+		writeError(
+			c,
 			http.StatusBadRequest,
-			gin.H{
-				"error": err.Error(),
-			},
+			err.Error(),
 		)
 
 	case errors.Is(
 		err,
 		service.ErrEmployeeCodeExists,
 	):
-		c.JSON(
+
+		writeError(
+			c,
 			http.StatusConflict,
-			gin.H{
-				"error": err.Error(),
-			},
+			err.Error(),
 		)
 
 	case errors.Is(
 		err,
 		repository.ErrTalentProfileNotFound,
 	):
-		c.JSON(
+
+		writeError(
+			c,
 			http.StatusNotFound,
-			gin.H{
-				"error": "talent profile not found",
-			},
+			"talent profile not found",
 		)
 
 	default:
+
+		// Log the actual internal error for developers/operators.
+		// Do not expose the internal error to the API client.
 		h.logger.Error(
 			"unexpected talent profile error",
 			"error", err,
 		)
 
-		c.JSON(
+		writeError(
+			c,
 			http.StatusInternalServerError,
-			gin.H{
-				"error": "internal server error",
-			},
+			"internal server error",
 		)
 	}
 }
 
-// parsePositiveInt safely parses query parameters.
+// writeSuccess sends a standardized successful API response.
+func writeSuccess(
+	c *gin.Context,
+	status int,
+	message string,
+	data any,
+) {
+
+	c.JSON(
+		status,
+		dto.APIResponse{
+			Success: true,
+			Message: message,
+			Data:    data,
+		},
+	)
+}
+
+// writeError sends a standardized error API response.
+func writeError(
+	c *gin.Context,
+	status int,
+	message string,
+) {
+
+	c.JSON(
+		status,
+		dto.ErrorResponse{
+			Success: false,
+			Message: message,
+		},
+	)
+}
+
+// parsePositiveInt safely parses positive integer query parameters.
 //
 // Example:
 //
 // ?page=2
 // ?limit=20
+//
+// If the value is missing or invalid, the supplied default value
+// is returned.
 func parsePositiveInt(
 	value string,
 	defaultValue int,

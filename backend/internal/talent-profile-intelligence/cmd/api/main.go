@@ -56,11 +56,14 @@ func main() {
 		)
 
 	// Create service.
-	talentProfileService :=
-		service.NewTalentProfileService(
-			talentProfileRepository,
-			appLogger.Logger,
-		)
+	// Create service.
+// Create service.
+talentProfileService :=
+    service.NewTalentProfileService(
+        talentProfileRepository,
+        nil,
+        appLogger.Logger,
+    )
 
 	// Create Talent Profile HTTP handler.
 	talentProfileHandler :=

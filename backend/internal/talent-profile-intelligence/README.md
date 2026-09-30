@@ -362,3 +362,15 @@ Repository --> PostgreSQL         (TPI-008)
 The next implementation step is **TPI-008: Repository Integration
 Testing**, where the actual SQL repository will be tested against
 PostgreSQL.
+
+TPI-010: Kafka Event Publishing
+
+Current progress:
+- Added Kafka Go client
+- Added Kafka producer abstraction
+- Added talent profile event contract
+- Added profile event type
+- Added EventPublisher interface
+
+Kafka is currently being introduced into the service.
+CRUD operations have not yet been connected to Kafka.

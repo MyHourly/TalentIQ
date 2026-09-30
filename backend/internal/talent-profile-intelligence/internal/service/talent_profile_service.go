@@ -2,21 +2,17 @@ package service
 
 import (
 	"context"
-
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
+	"talentiq/talent-profile-intelligence/internal/messaging"
 	"talentiq/talent-profile-intelligence/internal/model"
 	"talentiq/talent-profile-intelligence/internal/repository"
 )
-
-// These errors represent business-level validation failures.
-//
-// The HTTP handler will later convert these errors into
-// appropriate HTTP responses such as 400 or 409.
 
 // TalentProfileService contains business operations related
 // to Talent Profiles.
@@ -58,17 +54,23 @@ type TalentProfileService interface {
 // of TalentProfileService.
 type talentProfileService struct {
 	repository repository.TalentProfileRepository
+	publisher  messaging.EventPublisher
 	logger     *slog.Logger
 }
 
 // NewTalentProfileService creates a new Talent Profile service.
+//
+// The EventPublisher is injected as an interface so the service
+// does not depend directly on Kafka implementation details.
 func NewTalentProfileService(
 	repository repository.TalentProfileRepository,
+	publisher messaging.EventPublisher,
 	logger *slog.Logger,
 ) TalentProfileService {
 
 	return &talentProfileService{
 		repository: repository,
+		publisher:  publisher,
 		logger:     logger,
 	}
 }
@@ -217,6 +219,7 @@ func (s *talentProfileService) Update(
 		return nil, err
 	}
 
+	// First update the profile in PostgreSQL.
 	updated, err := s.repository.Update(
 		ctx,
 		profile,
@@ -230,6 +233,40 @@ func (s *talentProfileService) Update(
 		"talent profile updated successfully",
 		"profile_id", updated.ID,
 	)
+
+	// Create the event that will be consumed by other
+	// TalentIQ services.
+	event := messaging.TalentProfileEvent{
+		EventID:      uuid.New(),
+		EventType:    messaging.TalentProfileUpdated,
+		TalentID:     updated.ID,
+		EmployeeCode: updated.EmployeeCode,
+		OccurredAt:   time.Now().UTC(),
+	}
+
+	// Publish the profile update event.
+	//
+	// The database update has already succeeded at this point.
+	// Therefore, a Kafka failure must not be treated as if the
+	// database update itself failed.
+	if s.publisher != nil {
+
+		if err := s.publisher.Publish(
+			ctx,
+			updated.ID.String(),
+			event,
+		); err != nil {
+
+			// Log the Kafka failure so it can be monitored.
+			// The database update remains successful.
+			s.logger.Error(
+				"failed to publish talent profile updated event",
+				"error", err,
+				"profile_id", updated.ID,
+				"event_type", messaging.TalentProfileUpdated,
+			)
+		}
+	}
 
 	return updated, nil
 }

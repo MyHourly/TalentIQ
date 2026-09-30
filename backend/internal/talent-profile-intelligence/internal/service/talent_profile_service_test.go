@@ -195,6 +195,7 @@ func newTestService(
 
 	return NewTalentProfileService(
 		repository,
+		nil,
 		logger,
 	)
 }
