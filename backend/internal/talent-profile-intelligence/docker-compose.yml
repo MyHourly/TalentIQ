@@ -1,0 +1,47 @@
+services:
+
+  kafka:
+    image: apache/kafka:4.1.0
+    container_name: talentiq-kafka
+
+    ports:
+      - "9092:9092"
+
+    environment:
+      # Run Kafka in KRaft mode.
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+
+      # Kafka internal listeners.
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+
+      # Address advertised to applications running on the host machine.
+      #
+      # LOCAL DEVELOPMENT:
+      # Go service runs on Windows/host machine and connects through
+      # localhost:9092.
+      #
+      # FUTURE REFACTOR:
+      # When TalentIQ moves to centralized Kafka infrastructure,
+      # this local broker configuration will be replaced by the
+      # centralized Kafka broker addresses.
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+
+      # Development settings.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+      # Allow automatic topic creation during local development.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+
+volumes:
+  kafka-data:

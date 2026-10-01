@@ -69,18 +69,30 @@ type TalentProfileListResponse struct {
 // ToModel converts the create request DTO into the
 // internal TalentProfile model.
 func (r *TalentProfileCreateRequest) ToModel() *model.TalentProfile {
-	return &model.TalentProfile{
+	profile := &model.TalentProfile{
 		EmployeeCode:         r.EmployeeCode,
 		FirstName:            r.FirstName,
 		LastName:             r.LastName,
 		Email:                r.Email,
-		Phone:                *r.Phone,
 		Designation:          r.Designation,
 		Department:           r.Department,
-		Location:             *r.Location,
-		Summary:              *r.Summary,
 		TotalExperienceYears: r.TotalExperienceYears,
 	}
+
+	// Optional fields are copied only when provided.
+	if r.Phone != nil {
+		profile.Phone = *r.Phone
+	}
+
+	if r.Location != nil {
+		profile.Location = *r.Location
+	}
+
+	if r.Summary != nil {
+		profile.Summary = *r.Summary
+	}
+
+	return profile
 }
 
 // ToModel converts the update request DTO into the
@@ -90,20 +102,32 @@ func (r *TalentProfileUpdateRequest) ToModel(
 	employeeCode string,
 ) *model.TalentProfile {
 
-	return &model.TalentProfile{
+	profile := &model.TalentProfile{
 		ID:                   id,
 		EmployeeCode:         employeeCode,
 		FirstName:            r.FirstName,
 		LastName:             r.LastName,
 		Email:                r.Email,
-		Phone:                *r.Phone,
 		Designation:          r.Designation,
 		Department:           r.Department,
-		Location:             *r.Location,
-		Summary:              *r.Summary,
 		TotalExperienceYears: r.TotalExperienceYears,
 		ProfileStatus:        r.ProfileStatus,
 	}
+
+	// Optional fields are copied only when provided.
+	if r.Phone != nil {
+		profile.Phone = *r.Phone
+	}
+
+	if r.Location != nil {
+		profile.Location = *r.Location
+	}
+
+	if r.Summary != nil {
+		profile.Summary = *r.Summary
+	}
+
+	return profile
 }
 
 // FromModel converts the internal model into an API response DTO.
@@ -111,20 +135,33 @@ func FromTalentProfileModel(
 	profile *model.TalentProfile,
 ) *TalentProfileResponse {
 
+	if profile == nil {
+		return nil
+	}
+
 	return &TalentProfileResponse{
 		ID:                   profile.ID,
 		EmployeeCode:         profile.EmployeeCode,
 		FirstName:            profile.FirstName,
 		LastName:             profile.LastName,
 		Email:                profile.Email,
-		Phone:                &profile.Phone,
+		Phone:                stringPointer(profile.Phone),
 		Designation:          profile.Designation,
 		Department:           profile.Department,
-		Location:             &profile.Location,
-		Summary:              &profile.Summary,
+		Location:             stringPointer(profile.Location),
+		Summary:              stringPointer(profile.Summary),
 		TotalExperienceYears: profile.TotalExperienceYears,
 		ProfileStatus:        profile.ProfileStatus,
 		CreatedAt:            profile.CreatedAt,
 		UpdatedAt:            profile.UpdatedAt,
 	}
+}
+
+// stringPointer converts a string into a pointer.
+func stringPointer(value string) *string {
+	if value == "" {
+		return nil
+	}
+
+	return &value
 }
