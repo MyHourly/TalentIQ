@@ -4,5 +4,6 @@ package messaging
 const (
 	// TalentProfileUpdated represents a change to an existing
 	// talent profile.
-	TalentProfileUpdated = "candidate.profile.updated"
+	TalentProfileUpdated    = "candidate.profile.updated"
+	TalentProfileDeactivated = "candidate.profile.deactivated"
 )

@@ -38,6 +38,21 @@ type mockTalentProfileRepository struct {
 	deleteCalled bool
 }
 
+// GetByIDIncludingDeleted implements [repository.TalentProfileRepository].
+// GetByIDIncludingDeleted simulates retrieving a profile
+// even after it has been soft-deleted.
+func (m *mockTalentProfileRepository) GetByIDIncludingDeleted(
+	ctx context.Context,
+	id uuid.UUID,
+) (*model.TalentProfile, error) {
+
+	if profile, exists := m.profiles[id]; exists {
+		return profile, nil
+	}
+
+	return nil, ErrTalentProfileNotFound
+}
+
 // newMockTalentProfileRepository creates an empty mock repository.
 func newMockTalentProfileRepository() *mockTalentProfileRepository {
 

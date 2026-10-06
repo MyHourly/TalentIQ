@@ -11,6 +11,7 @@ import (
 	"talentiq/talent-profile-intelligence/internal/handler"
 	"talentiq/talent-profile-intelligence/internal/logger"
 	"talentiq/talent-profile-intelligence/internal/messaging"
+	"talentiq/talent-profile-intelligence/internal/messaging/handlers"
 	"talentiq/talent-profile-intelligence/internal/repository"
 	"talentiq/talent-profile-intelligence/internal/service"
 )
@@ -43,7 +44,6 @@ func main() {
 	// Create PostgreSQL connection pool.
 	db, err := database.NewPostgres(ctx, cfg)
 	if err != nil {
-
 		appLogger.Error(
 			"database initialization failed",
 			"error", err,
@@ -71,10 +71,6 @@ func main() {
 	// FUTURE REFACTOR:
 	// Broker and topic configuration should eventually come
 	// from the centralized TalentIQ Kafka infrastructure.
-	//
-	// The service layer depends only on the EventPublisher
-	// interface, so the Kafka implementation can be replaced
-	// later without changing business logic.
 	eventPublisher := messaging.NewKafkaProducer(
 		cfg.KafkaBrokers,
 		cfg.KafkaTopic,
@@ -83,9 +79,7 @@ func main() {
 
 	// Close Kafka producer when the application exits.
 	defer func() {
-
 		if err := eventPublisher.Close(); err != nil {
-
 			appLogger.Error(
 				"failed to close kafka producer",
 				"error", err,
@@ -100,53 +94,6 @@ func main() {
 	)
 
 	// ---------------------------------------------------------
-	// Kafka Consumer
-	// ---------------------------------------------------------
-
-	// Create Kafka consumer.
-	//
-	// DEVELOPMENT ONLY:
-	// Kafka currently runs locally through Docker.
-	//
-	// FUTURE REFACTOR:
-	// Kafka broker, topic and consumer-group configuration
-	// should eventually come from the centralized TalentIQ
-	// Kafka infrastructure.
-	kafkaConsumer := messaging.NewKafkaConsumer(
-		cfg.KafkaBrokers,
-		cfg.KafkaTopic,
-		cfg.KafkaGroupID,
-		appLogger.Logger,
-	)
-
-	// Close Kafka consumer when the application exits.
-	defer func() {
-
-		if err := kafkaConsumer.Close(); err != nil {
-
-			appLogger.Error(
-				"failed to close kafka consumer",
-				"error", err,
-			)
-		}
-	}()
-
-	// Start Kafka consumer in the background.
-	//
-	// The Kafka consumer runs independently from the HTTP API.
-	go func() {
-
-		if err := kafkaConsumer.Consume(ctx); err != nil {
-
-			appLogger.Error(
-				"Kafka consumer stopped",
-				"error", err,
-			)
-		}
-
-	}()
-
-	// ---------------------------------------------------------
 	// Repository
 	// ---------------------------------------------------------
 
@@ -158,19 +105,144 @@ func main() {
 		)
 
 	// ---------------------------------------------------------
-	// Service
+	// Event Processing Service
+	// ---------------------------------------------------------
+
+	// Create the service responsible for business processing
+	// triggered by Kafka talent profile events.
+	talentProfileEventService :=
+		service.NewTalentProfileEventService(
+			talentProfileRepository,
+			appLogger.Logger,
+		)
+
+	// ---------------------------------------------------------
+	// Kafka Event Dispatcher
+	// ---------------------------------------------------------
+
+	// Create event dispatcher.
+	eventDispatcher := messaging.NewEventDispatcher(
+		appLogger.Logger,
+	)
+
+	// ---------------------------------------------------------
+	// Profile Created Handler
+	// ---------------------------------------------------------
+
+	// The created handler uses the event processing service
+	// to perform business processing.
+	profileCreatedHandler :=
+		handlers.NewProfileCreatedHandler(
+			talentProfileEventService,
+			appLogger.Logger,
+		)
+
+	eventDispatcher.RegisterHandler(
+		"candidate.profile.created",
+		profileCreatedHandler,
+	)
+
+	// ---------------------------------------------------------
+	// Profile Updated Handler
+	// ---------------------------------------------------------
+
+	// The updated handler also uses the event processing service.
+	profileUpdatedHandler :=
+		handlers.NewProfileUpdatedHandler(
+			talentProfileEventService,
+			appLogger.Logger,
+		)
+	eventDispatcher.RegisterHandler(
+		"candidate.profile.updated",
+		profileUpdatedHandler,
+	)
+
+	// ---------------------------------------------------------
+	// Profile Deactivated Handler
+	// ---------------------------------------------------------
+
+	// The deactivated handler currently uses its existing
+	// implementation. Business processing will be added
+	// in a later lesson.
+	// ---------------------------------------------------------
+	// Profile Deactivated Handler
+	// ---------------------------------------------------------
+
+	// The deactivated handler uses the event processing service
+	// to process the deactivated profile event.
+	profileDeactivatedHandler :=
+		handlers.NewProfileDeactivatedHandler(
+			talentProfileEventService,
+			appLogger.Logger,
+		)
+
+	eventDispatcher.RegisterHandler(
+		"candidate.profile.deactivated",
+		profileDeactivatedHandler,
+	)
+
+	 
+
+	// ---------------------------------------------------------
+	// Kafka Consumer
+	// ---------------------------------------------------------
+
+	// Create Kafka consumer.
+	//
+	// The consumer receives the EventDispatcher so that
+	// Kafka messages can be routed to the correct handler.
+	kafkaConsumer := messaging.NewKafkaConsumer(
+		cfg.KafkaBrokers,
+		cfg.KafkaTopic,
+		cfg.KafkaGroupID,
+		appLogger.Logger,
+		eventDispatcher,
+	)
+
+	// Close Kafka consumer when the application exits.
+	defer func() {
+		if err := kafkaConsumer.Close(); err != nil {
+			appLogger.Error(
+				"failed to close kafka consumer",
+				"error", err,
+			)
+		}
+	}()
+
+	// ---------------------------------------------------------
+	// Start Kafka Consumer
+	// ---------------------------------------------------------
+
+	// Start Kafka consumer in the background.
+	//
+	// Event flow:
+	//
+	// Kafka Topic
+	//      ↓
+	// Kafka Consumer
+	//      ↓
+	// Event Dispatcher
+	//      ↓
+	// Event Handler
+	//      ↓
+	// Event Processing Service
+	go func() {
+		if err := kafkaConsumer.Consume(ctx); err != nil {
+			appLogger.Error(
+				"Kafka consumer stopped",
+				"error", err,
+			)
+		}
+	}()
+
+	// ---------------------------------------------------------
+	// Talent Profile Service
 	// ---------------------------------------------------------
 
 	// Create Talent Profile service.
 	//
-	// The service receives EventPublisher instead of directly
-	// depending on KafkaProducer.
-	//
-	// This keeps business logic independent from Kafka.
-	//
-	// FUTURE REFACTOR:
-	// A centralized TalentIQ messaging implementation can be
-	// injected here without changing the service layer.
+	// The service depends on EventPublisher instead of
+	// directly depending on KafkaProducer.
 	talentProfileService :=
 		service.NewTalentProfileService(
 			talentProfileRepository,

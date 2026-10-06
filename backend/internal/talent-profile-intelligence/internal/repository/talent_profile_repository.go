@@ -27,33 +27,32 @@ var (
 // The service layer will depend on this interface instead
 // of directly depending on PostgreSQL.
 type TalentProfileRepository interface {
-
-	// Create stores a new talent profile.
 	Create(
 		ctx context.Context,
 		profile *model.TalentProfile,
 	) (*model.TalentProfile, error)
 
-	// GetByID returns one active talent profile.
 	GetByID(
 		ctx context.Context,
 		id uuid.UUID,
 	) (*model.TalentProfile, error)
 
-	// List returns active talent profiles with pagination.
+	GetByIDIncludingDeleted(
+		ctx context.Context,
+		id uuid.UUID,
+	) (*model.TalentProfile, error)
+
 	List(
 		ctx context.Context,
 		limit int,
 		offset int,
 	) ([]*model.TalentProfile, int, error)
 
-	// Update modifies an existing talent profile.
 	Update(
 		ctx context.Context,
 		profile *model.TalentProfile,
 	) (*model.TalentProfile, error)
 
-	// Delete performs a soft delete.
 	Delete(
 		ctx context.Context,
 		id uuid.UUID,
@@ -575,4 +574,84 @@ func (r *talentProfileRepository) ExistsByEmployeeCode(
 	}
 
 	return exists, nil
+}
+
+// GetByIDIncludingDeleted returns a talent profile
+// regardless of its deleted status.
+//
+// This is mainly used for event processing where a
+// deactivated profile may already have been soft deleted.
+func (r *talentProfileRepository) GetByIDIncludingDeleted(
+	ctx context.Context,
+	id uuid.UUID,
+) (*model.TalentProfile, error) {
+
+	const query = `
+		SELECT
+			id,
+			employee_code,
+			first_name,
+			last_name,
+			email,
+			phone,
+			designation,
+			department,
+			location,
+			summary,
+			total_experience_years,
+			profile_status,
+			created_at,
+			updated_at,
+			deleted_at
+		FROM talent_profiles
+		WHERE id = $1
+	`
+
+	var profile model.TalentProfile
+
+	err := r.db.QueryRow(
+		ctx,
+		query,
+		id,
+	).Scan(
+		&profile.ID,
+		&profile.EmployeeCode,
+		&profile.FirstName,
+		&profile.LastName,
+		&profile.Email,
+		&profile.Phone,
+		&profile.Designation,
+		&profile.Department,
+		&profile.Location,
+		&profile.Summary,
+		&profile.TotalExperienceYears,
+		&profile.ProfileStatus,
+		&profile.CreatedAt,
+		&profile.UpdatedAt,
+		&profile.DeletedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			r.logger.Info(
+				"talent profile not found",
+				"profile_id", id,
+			)
+
+			return nil, ErrTalentProfileNotFound
+		}
+
+		r.logger.Error(
+			"failed to get talent profile including deleted profile",
+			"profile_id", id,
+			"error", err,
+		)
+
+		return nil, fmt.Errorf(
+			"get talent profile including deleted: %w",
+			err,
+		)
+	}
+
+	return &profile, nil
 }

@@ -1,91 +1,45 @@
 # Talent Profile Intelligence
 
-Talent Profile Intelligence is a backend microservice of the TalentIQ
-platform. It manages core talent profile information through REST APIs
-and PostgreSQL.
+Talent Profile Intelligence is the currently implemented backend service in TalentIQ. It manages talent profile records through a Go/Gin REST API, persists them in PostgreSQL using pgx, and includes a Kafka publisher and consumer for local development.
 
----
+## Implemented behavior
 
-## 1. Current Status
+- Create, retrieve, list, update, and deactivate talent profiles.
+- Validate required profile fields and reject negative experience values.
+- Enforce unique employee codes and email addresses in PostgreSQL.
+- Paginate profile lists (`page` defaults to `1`; `limit` defaults to `20` and is capped at `100`).
+- Publish a `candidate.profile.updated` Kafka event after successful profile updates.
+- Consume profile event messages and log their contents. Event-specific processing is not implemented yet.
 
-### Completed
+Profile creation and deactivation do not currently publish Kafka events. If publishing an update event fails, the service logs the failure; the completed database update still returns success.
 
-- TPI-001: Service Foundation
-- TPI-002: PostgreSQL Setup
-- TPI-003: Talent Profile Model, Migration & Logging
-- TPI-004: DTO & Service Layer
-- TPI-005: Repository & REST API
-- TPI-006: Postman API Testing
-- TPI-007: Service Unit Testing
+## Stack and structure
 
-### Next
-
-- TPI-008: Repository Integration Testing
-
----
-
-## 2. Technology Stack
-
-- Go
-- Gin
-- PostgreSQL
-- pgx
-- Docker
-- Postman
-- Go Testing
-
-Planned later:
-
-- Kafka
-- Redis
-- Swagger/OpenAPI
-- Prometheus
-- OpenTelemetry
-- Kubernetes
-
----
-
-## 3. Architecture
+- Go 1.25.5
+- Gin HTTP router
+- PostgreSQL with pgx and SQL migrations (no ORM)
+- Kafka with `segmentio/kafka-go`
+- Structured logging with `log/slog`
 
 ```text
-Client
-  |
-  v
-Gin Router
-  |
-  v
-Handler
-  |
-  v
-DTO
-  |
-  v
-Service
-  |
-  v
-Repository
-  |
-  v
-PostgreSQL
+cmd/api/          Application entry point and route wiring
+internal/config/  Environment-based configuration
+internal/handler/ HTTP handlers and health endpoints
+internal/dto/     Request and response types
+internal/service/ Business validation and application logic
+internal/repository/ PostgreSQL queries
+internal/model/   Domain model
+internal/messaging/ Kafka producer, consumer, and event contract
+migrations/       PostgreSQL schema
 ```
 
-### Layer Responsibilities
+## Local setup
 
-| Layer | Responsibility |
-|---|---|
-| Handler | HTTP request/response |
-| DTO | API request/response structure |
-| Service | Business logic & validation |
-| Repository | PostgreSQL & SQL queries |
-| PostgreSQL | Data storage |
+Run the following from this service directory. You need Go, Docker, PostgreSQL, and Kafka.
 
-The repository uses **SQL + pgx** instead of an ORM.
+### 1. Start PostgreSQL
 
----
-
-## 4. PostgreSQL Setup
-
-### Create PostgreSQL Container
+The default connection settings are `localhost:5432`, database `talent_db`, user `postgres`, and password `postgres`.
 
 ```powershell
 docker run --name talentiq-postgres `
@@ -96,172 +50,105 @@ docker run --name talentiq-postgres `
   -d postgres:17
 ```
 
-If the container already exists:
+If the container already exists, start it with `docker start talentiq-postgres`.
 
-```powershell
-docker start talentiq-postgres
-```
-
-Check status:
-
-```powershell
-docker ps
-```
-
-### Database Details
-
-```text
-Host: localhost
-Port: 5432
-Database: talent_db
-User: postgres
-```
-
----
-
-## 5. Dependencies
-
-Install pgx:
-
-```powershell
-go get github.com/jackc/pgx/v5
-```
-
-Synchronize dependencies:
-
-```powershell
-go mod tidy
-```
-
----
-
-## 6. Database Migration
-
-Migration file:
-
-```text
-migrations/001_create_talent_profiles.sql
-```
-
-### Windows PowerShell
+Apply the initial schema:
 
 ```powershell
 Get-Content migrations/001_create_talent_profiles.sql |
-docker exec -i talentiq-postgres psql -U postgres -d talent_db
+  docker exec -i talentiq-postgres psql -U postgres -d talent_db
 ```
 
-Use this command to apply the SQL migration to the PostgreSQL
-container.
+### 2. Start Kafka
 
-To access PostgreSQL manually:
+The included Compose file starts a local Kafka broker on `localhost:9092`:
 
 ```powershell
-docker exec -it talentiq-postgres psql -U postgres -d talent_db
+docker compose up -d kafka
 ```
 
----
+The configured topic is `talent-profile-events`; Kafka is configured to create it automatically for local development.
 
-## 7. Run the Service
+### 3. Configure and run
 
-From the service directory:
+Start the API:
 
 ```powershell
-go run .
+go run ./cmd/api
 ```
 
-Health check:
+Configuration is read directly from process environment variables. The application does not load `.env` automatically. The checked-in `.env.example` is a list of variable names/placeholders; use actual values in your shell or deployment environment.
 
-```text
-GET /health
-```
+| Variable | Default |
+|---|---|
+| `APP_NAME` | `talent-profile-intelligence` |
+| `APP_ENV` | `development` |
+| `SERVER_PORT` | `8080` |
+| `DB_HOST` | `localhost` |
+| `DB_PORT` | `5432` |
+| `DB_USER` | `postgres` |
+| `DB_PASSWORD` | `postgres` |
+| `DB_NAME` | `talent_db` |
+| `KAFKA_BROKERS` | `localhost:9092` |
+| `KAFKA_TOPIC` | `talent-profile-events` |
+| `KAFKA_GROUP_ID` | `talent-profile-intelligence` |
 
----
+Both PostgreSQL and Kafka clients are initialized during startup. `/health` reports process health; `/ready` checks the PostgreSQL connection.
 
-## 8. REST APIs
+## HTTP API
 
-Base path:
+All profile routes are under `/api/v1`. UUIDs are used for profile IDs.
 
-```text
-/api/v1
-```
-
-| Method | Endpoint | Purpose |
+| Method | Route | Result |
 |---|---|---|
-| POST | `/api/v1/talent-profiles` | Create profile |
-| GET | `/api/v1/talent-profiles` | List profiles |
-| GET | `/api/v1/talent-profiles/:id` | Get profile |
-| PUT | `/api/v1/talent-profiles/:id` | Update profile |
-| DELETE | `/api/v1/talent-profiles/:id` | Deactivate profile |
+| `GET` | `/health` | Liveness response |
+| `GET` | `/ready` | PostgreSQL readiness response |
+| `POST` | `/api/v1/talent-profiles` | Create a profile; new profiles are `ACTIVE` |
+| `GET` | `/api/v1/talent-profiles` | Return a paginated profile list |
+| `GET` | `/api/v1/talent-profiles/:id` | Retrieve one profile |
+| `PUT` | `/api/v1/talent-profiles/:id` | Update profile details and status |
+| `DELETE` | `/api/v1/talent-profiles/:id` | Deactivate a profile (soft delete) |
 
-### Pagination
+List example: `GET /api/v1/talent-profiles?page=2&limit=20`. The response includes `data`, `page`, `limit`, and `total`.
 
-```text
-GET /api/v1/talent-profiles?page=1&limit=20
+Create request fields:
+
+```json
+{
+  "employee_code": "EMP-1001",
+  "first_name": "Asha",
+  "last_name": "Rao",
+  "email": "asha.rao@example.com",
+  "designation": "Software Engineer",
+  "department": "Engineering",
+  "total_experience_years": 4.5,
+  "phone": "+91-555-0100",
+  "location": "Bengaluru",
+  "summary": "Backend engineer"
+}
 ```
 
----
+`employee_code`, `first_name`, `last_name`, `email`, `designation`, and `department` are required by service validation. `total_experience_years` must be non-negative. `phone`, `location`, and `summary` are optional. Update accepts the editable profile fields plus `profile_status`; `employee_code` is not editable.
 
-## 9. Testing
+Success responses have `success`, `message`, and `data` fields. Errors have `success: false` and a `message`. Invalid bodies or IDs return `400`, duplicate employee codes return `409`, missing profiles return `404`, and unexpected failures return `500`.
 
-### Run Service Unit Tests
+## Kafka event contract
 
-```powershell
-go test ./internal/service/...
+Successful profile updates publish an event to the configured topic, keyed by profile UUID:
+
+```json
+{
+  "event_id": "<event UUID>",
+  "event_type": "candidate.profile.updated",
+  "talent_id": "<profile UUID>",
+  "employee_code": "EMP-1001",
+  "occurred_at": "<UTC timestamp>"
+}
 ```
 
-**Use:** Tests Service business logic using the mock repository.
+The consumer currently unmarshals this contract and logs received events. It skips malformed messages after logging them. Broker settings are local service configuration and have not been moved to centralized TalentIQ infrastructure.
 
-### Run All Tests
-
-```powershell
-go test ./...
-```
-
-**Use:** Verifies that all project tests pass before committing.
-
-### Verbose Tests
-
-```powershell
-go test -v ./...
-```
-
-**Use:** Shows detailed test execution when debugging failures.
-
-### Check Coverage
-
-```powershell
-go test ./internal/service/... -cover
-```
-
-**Use:** Shows Service layer test coverage.
-
-### Generate Coverage Report
-
-```powershell
-go test ./internal/service/... -coverprofile=coverage.out
-go tool cover -html=coverage.out -o coverage.html
-start coverage.html
-```
-
-**Use:** Opens a visual report showing which code is covered by tests.
-
----
-
-## 10. Code Verification
-
-Format code:
-
-```powershell
-gofmt -w .
-```
-
-Build the project:
-
-```powershell
-go build ./...
-```
-
-Recommended before committing:
+## Development and tests
 
 ```powershell
 gofmt -w .
@@ -269,108 +156,6 @@ go test ./...
 go build ./...
 ```
 
----
+Unit tests for service behavior are in `internal/service`. Repository integration tests are not currently implemented; `tests/integration` and `tests/unit` are placeholders.
 
-## 11. Git Workflow
-
-Update local `develop`:
-
-```powershell
-git checkout develop
-git pull origin develop
-```
-
-Create feature branch:
-
-```powershell
-git checkout -b feature/<feature-name>
-```
-
-Check changes:
-
-```powershell
-git status
-git diff
-```
-
-Commit:
-
-```powershell
-git add .
-git commit -m "type(scope): description"
-```
-
-Push:
-
-```powershell
-git push origin feature/<feature-name>
-```
-
----
-
-## 12. Development Rules
-
-- Keep HTTP logic in Handler.
-- Keep business logic in Service.
-- Keep SQL/database logic in Repository.
-- Use DTOs for API requests/responses.
-- Add tests for new business logic.
-- Do not commit `.env` or secrets.
-- Run tests before pushing changes.
-- Update documentation when API or architecture changes.
-
----
-
-## 13. Lesson Tracking
-
-| ID | Lesson | Status |
-|---|---|---|
-| TPI-001 | Service Foundation | Completed |
-| TPI-002 | PostgreSQL Setup | Completed |
-| TPI-003 | Model, Migration & Logging | Completed |
-| TPI-004 | DTO & Service Layer | Completed |
-| TPI-005 | Repository & REST API | Completed |
-| TPI-006 | Postman Testing | Completed |
-| TPI-007 | Service Unit Testing | Completed |
-| TPI-008 | Repository Integration Testing | Next |
-
----
-
-## 14. Current Development Flow
-
-```text
-Talent Profile API
-       |
-       v
-   Handler
-       |
-       v
-    Service
-       |
-       v
-  Repository
-       |
-       v
- PostgreSQL
-
-Testing:
-
-Service --> Mock Repository       (TPI-007)
-Repository --> PostgreSQL         (TPI-008)
-```
-
-The next implementation step is **TPI-008: Repository Integration
-Testing**, where the actual SQL repository will be tested against
-PostgreSQL.
-
-TPI-010: Kafka Event Publishing
-
-Current progress:
-- Added Kafka Go client
-- Added Kafka producer abstraction
-- Added talent profile event contract
-- Added profile event type
-- Added EventPublisher interface
-
-Kafka is currently being introduced into the service.
-CRUD operations have not yet been connected to Kafka.
+Keep HTTP concerns in handlers, business rules in services, and SQL in repositories. Do not commit `.env` files or secrets. Update this README when service behavior, configuration, or API contracts change.

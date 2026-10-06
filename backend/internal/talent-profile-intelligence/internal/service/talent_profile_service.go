@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,60 +13,28 @@ import (
 	"talentiq/talent-profile-intelligence/internal/repository"
 )
 
-// TalentProfileService contains business operations related
-// to Talent Profiles.
+// TalentProfileService defines business operations for talent profiles.
 type TalentProfileService interface {
-
-	// Creates a new talent profile after validation.
-	Create(
-		ctx context.Context,
-		profile *model.TalentProfile,
-	) (*model.TalentProfile, error)
-
-	// Returns a single talent profile.
-	GetByID(
-		ctx context.Context,
-		id uuid.UUID,
-	) (*model.TalentProfile, error)
-
-	// Returns a paginated list of talent profiles.
-	List(
-		ctx context.Context,
-		limit int,
-		offset int,
-	) ([]*model.TalentProfile, int, error)
-
-	// Updates an existing talent profile.
-	Update(
-		ctx context.Context,
-		profile *model.TalentProfile,
-	) (*model.TalentProfile, error)
-
-	// Deactivates a talent profile.
-	Delete(
-		ctx context.Context,
-		id uuid.UUID,
-	) error
+	Create(ctx context.Context, profile *model.TalentProfile) (*model.TalentProfile, error)
+	GetByID(ctx context.Context, id uuid.UUID) (*model.TalentProfile, error)
+	List(ctx context.Context, limit, offset int) ([]*model.TalentProfile, int, error)
+	Update(ctx context.Context, profile *model.TalentProfile) (*model.TalentProfile, error)
+	Delete(ctx context.Context, id uuid.UUID) error
 }
 
-// talentProfileService is the concrete implementation
-// of TalentProfileService.
+// talentProfileService contains business logic for talent profiles.
 type talentProfileService struct {
 	repository repository.TalentProfileRepository
 	publisher  messaging.EventPublisher
 	logger     *slog.Logger
 }
 
-// NewTalentProfileService creates a new Talent Profile service.
-//
-// The EventPublisher is injected as an interface so the service
-// does not depend directly on Kafka implementation details.
+// NewTalentProfileService creates a new talent profile service.
 func NewTalentProfileService(
 	repository repository.TalentProfileRepository,
 	publisher messaging.EventPublisher,
 	logger *slog.Logger,
 ) TalentProfileService {
-
 	return &talentProfileService{
 		repository: repository,
 		publisher:  publisher,
@@ -75,29 +42,25 @@ func NewTalentProfileService(
 	}
 }
 
-// Create validates and creates a new talent profile.
+// Create creates a new talent profile.
 func (s *talentProfileService) Create(
 	ctx context.Context,
 	profile *model.TalentProfile,
 ) (*model.TalentProfile, error) {
 
-	// Validate the incoming profile before touching the database.
-	if err := validateTalentProfile(profile); err != nil {
-		s.logger.Warn(
-			"talent profile validation failed",
-			"error", err,
+	// Validate the profile.
+	if profile == nil || profile.EmployeeCode == "" {
+		return nil, fmt.Errorf(
+			"invalid talent profile: %w",
+			ErrInvalidTalentProfile,
 		)
-
-		return nil, err
 	}
 
-	// Check whether another active profile already uses
-	// the same employee code.
+	// Check whether employee code already exists.
 	exists, err := s.repository.ExistsByEmployeeCode(
 		ctx,
 		profile.EmployeeCode,
 	)
-
 	if err != nil {
 		return nil, fmt.Errorf(
 			"check employee code: %w",
@@ -106,28 +69,17 @@ func (s *talentProfileService) Create(
 	}
 
 	if exists {
-		s.logger.Warn(
-			"employee code already exists",
-			"employee_code", profile.EmployeeCode,
+		return nil, fmt.Errorf(
+			"employee code already exists: %w",
+			ErrEmployeeCodeExists,
 		)
-
-		return nil, ErrEmployeeCodeExists
 	}
 
 	// New profiles are active by default.
 	profile.ProfileStatus = "ACTIVE"
 
-	created, err := s.repository.Create(
-		ctx,
-		profile,
-	)
-
+	createdProfile, err := s.repository.Create(ctx, profile)
 	if err != nil {
-		s.logger.Error(
-			"failed to create talent profile",
-			"error", err,
-		)
-
 		return nil, fmt.Errorf(
 			"create talent profile: %w",
 			err,
@@ -135,56 +87,53 @@ func (s *talentProfileService) Create(
 	}
 
 	s.logger.Info(
-		"talent profile created successfully",
-		"profile_id", created.ID,
+		"talent profile created",
+		"talent_id", createdProfile.ID,
+		"employee_code", createdProfile.EmployeeCode,
 	)
 
-	return created, nil
+	return createdProfile, nil
 }
 
-// GetByID returns one talent profile.
+// GetByID retrieves an active talent profile by ID.
 func (s *talentProfileService) GetByID(
 	ctx context.Context,
 	id uuid.UUID,
 ) (*model.TalentProfile, error) {
 
-	// A zero UUID is not a valid profile identifier.
+	// Validate the profile ID before accessing the repository.
 	if id == uuid.Nil {
-		return nil, ErrInvalidTalentProfile
+		return nil, fmt.Errorf(
+			"invalid talent profile ID: %w",
+			ErrInvalidTalentProfile,
+		)
 	}
 
-	profile, err := s.repository.GetByID(
-		ctx,
-		id,
-	)
-
+	profile, err := s.repository.GetByID(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(
+			"get talent profile: %w",
+			err,
+		)
 	}
 
 	return profile, nil
 }
 
-// List returns talent profiles using pagination.
+// List retrieves talent profiles with pagination.
 func (s *talentProfileService) List(
 	ctx context.Context,
-	limit int,
+	limit,
 	offset int,
 ) ([]*model.TalentProfile, int, error) {
 
-	// Protect the database from unreasonable pagination values.
+	// Apply safe defaults for invalid pagination values.
 	if limit <= 0 {
-		limit = 20
+		limit = 10
 	}
 
-	// Prevent negative offsets.
 	if offset < 0 {
 		offset = 0
-	}
-
-	// Put a reasonable upper limit on a single request.
-	if limit > 100 {
-		limit = 100
 	}
 
 	profiles, total, err := s.repository.List(
@@ -192,176 +141,148 @@ func (s *talentProfileService) List(
 		limit,
 		offset,
 	)
-
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, fmt.Errorf(
+			"list talent profiles: %w",
+			err,
+		)
 	}
 
 	return profiles, total, nil
 }
 
-// Update validates and updates a talent profile.
+// Update updates an existing talent profile.
 func (s *talentProfileService) Update(
 	ctx context.Context,
 	profile *model.TalentProfile,
 ) (*model.TalentProfile, error) {
 
-	if profile == nil {
-		return nil, ErrInvalidTalentProfile
+	// Validate the profile.
+	if profile == nil || profile.ID == uuid.Nil {
+		return nil, fmt.Errorf(
+			"invalid talent profile: %w",
+			ErrInvalidTalentProfile,
+		)
 	}
 
-	if profile.ID == uuid.Nil {
-		return nil, ErrInvalidTalentProfile
-	}
-
-	// Validate the profile before updating it.
-	if err := validateTalentProfile(profile); err != nil {
-		return nil, err
-	}
-
-	// First update the profile in PostgreSQL.
-	updated, err := s.repository.Update(
-		ctx,
-		profile,
-	)
-
+	updatedProfile, err := s.repository.Update(ctx, profile)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(
+			"update talent profile: %w",
+			err,
+		)
 	}
 
 	s.logger.Info(
-		"talent profile updated successfully",
-		"profile_id", updated.ID,
+		"talent profile updated",
+		"talent_id", updatedProfile.ID,
+		"employee_code", updatedProfile.EmployeeCode,
 	)
 
-	// Create the event that will be consumed by other
-	// TalentIQ services.
+	// Create the profile updated event.
 	event := messaging.TalentProfileEvent{
 		EventID:      uuid.New(),
 		EventType:    messaging.TalentProfileUpdated,
-		TalentID:     updated.ID,
-		EmployeeCode: updated.EmployeeCode,
+		TalentID:     updatedProfile.ID,
+		EmployeeCode: updatedProfile.EmployeeCode,
 		OccurredAt:   time.Now().UTC(),
 	}
 
-	// Publish the profile update event.
-	//
-	// The database update has already succeeded at this point.
-	// Therefore, a Kafka failure must not be treated as if the
-	// database update itself failed.
+	// Publish the event to Kafka.
 	if s.publisher != nil {
-
 		if err := s.publisher.Publish(
 			ctx,
-			updated.ID.String(),
+			updatedProfile.ID.String(),
 			event,
 		); err != nil {
 
-			// Log the Kafka failure so it can be monitored.
-			// The database update remains successful.
+			// Database update already succeeded.
+			// Log the Kafka failure without failing the API operation.
 			s.logger.Error(
 				"failed to publish talent profile updated event",
 				"error", err,
-				"profile_id", updated.ID,
-				"event_type", messaging.TalentProfileUpdated,
+				"talent_id", updatedProfile.ID,
+				"event_id", event.EventID,
 			)
 		}
 	}
 
-	return updated, nil
+	return updatedProfile, nil
 }
 
-// Delete deactivates a talent profile.
+// Delete soft-deletes a talent profile.
 func (s *talentProfileService) Delete(
 	ctx context.Context,
 	id uuid.UUID,
 ) error {
 
+	// Validate the profile ID.
 	if id == uuid.Nil {
-		return ErrInvalidTalentProfile
+		return fmt.Errorf(
+			"invalid talent profile ID: %w",
+			ErrInvalidTalentProfile,
+		)
 	}
 
-	if err := s.repository.Delete(
-		ctx,
-		id,
-	); err != nil {
-		return err
+	// Soft-delete the profile in PostgreSQL.
+	if err := s.repository.Delete(ctx, id); err != nil {
+		return fmt.Errorf(
+			"delete talent profile: %w",
+			err,
+		)
 	}
 
 	s.logger.Info(
-		"talent profile deactivated successfully",
-		"profile_id", id,
+		"talent profile deactivated",
+		"talent_id", id,
 	)
 
-	return nil
-}
-
-// validateTalentProfile contains basic business validation.
-//
-// More detailed validation can later be moved to DTO validation
-// when the HTTP layer is implemented.
-func validateTalentProfile(
-	profile *model.TalentProfile,
-) error {
+	// Retrieve the deleted profile so that we can include
+	// the employee code in the Kafka event.
+	profile, err := s.repository.GetByIDIncludingDeleted(
+		ctx,
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"get deleted talent profile for event: %w",
+			err,
+		)
+	}
 
 	if profile == nil {
-		return ErrInvalidTalentProfile
-	}
-
-	// Employee code is required.
-	if strings.TrimSpace(profile.EmployeeCode) == "" {
 		return fmt.Errorf(
-			"%w: employee code is required",
-			ErrInvalidTalentProfile,
+			"deleted talent profile not found: %s",
+			id,
 		)
 	}
 
-	// First name is required.
-	if strings.TrimSpace(profile.FirstName) == "" {
-		return fmt.Errorf(
-			"%w: first name is required",
-			ErrInvalidTalentProfile,
-		)
+	// Create the profile deactivated event.
+	event := messaging.TalentProfileEvent{
+		EventID:      uuid.New(),
+		EventType:    messaging.TalentProfileDeactivated,
+		TalentID:     profile.ID,
+		EmployeeCode: profile.EmployeeCode,
+		OccurredAt:   time.Now().UTC(),
 	}
 
-	// Last name is required.
-	if strings.TrimSpace(profile.LastName) == "" {
-		return fmt.Errorf(
-			"%w: last name is required",
-			ErrInvalidTalentProfile,
-		)
-	}
+	// Publish the deactivation event to Kafka.
+	if s.publisher != nil {
+		if err := s.publisher.Publish(
+			ctx,
+			profile.ID.String(),
+			event,
+		); err != nil {
 
-	// Email is required.
-	if strings.TrimSpace(profile.Email) == "" {
-		return fmt.Errorf(
-			"%w: email is required",
-			ErrInvalidTalentProfile,
-		)
-	}
-
-	// Designation is required.
-	if strings.TrimSpace(profile.Designation) == "" {
-		return fmt.Errorf(
-			"%w: designation is required",
-			ErrInvalidTalentProfile,
-		)
-	}
-
-	// Department is required.
-	if strings.TrimSpace(profile.Department) == "" {
-		return fmt.Errorf(
-			"%w: department is required",
-			ErrInvalidTalentProfile,
-		)
-	}
-
-	// Experience cannot be negative.
-	if profile.TotalExperienceYears < 0 {
-		return fmt.Errorf(
-			"%w: total experience cannot be negative",
-			ErrInvalidTalentProfile,
-		)
+			// Database deletion already succeeded.
+			// Log the Kafka failure without failing the API operation.
+			s.logger.Error(
+				"failed to publish talent profile deactivated event",
+				"error", err,
+				"talent_id", profile.ID,
+				"event_id", event.EventID,
+			)
+		}
 	}
 
 	return nil

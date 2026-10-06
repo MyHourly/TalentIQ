@@ -1,0 +1,46 @@
+package messaging
+
+import (
+	"context"
+	"log/slog"
+)
+
+// TalentProfileUpdatedHandler handles
+// candidate.profile.updated events.
+type TalentProfileUpdatedHandler struct {
+	logger *slog.Logger
+}
+
+// NewTalentProfileUpdatedHandler creates a new
+// talent profile updated event handler.
+func NewTalentProfileUpdatedHandler(
+	logger *slog.Logger,
+) *TalentProfileUpdatedHandler {
+	return &TalentProfileUpdatedHandler{
+		logger: logger,
+	}
+}
+
+// Handle processes a candidate.profile.updated event.
+func (h *TalentProfileUpdatedHandler) Handle(
+	ctx context.Context,
+	event TalentProfileEvent,
+) error {
+
+	h.logger.Info(
+		"processing talent profile updated event",
+		"event_id", event.EventID,
+		"talent_id", event.TalentID,
+		"employee_code", event.EmployeeCode,
+		"occurred_at", event.OccurredAt,
+	)
+
+	// Business logic related to profile update events
+	// will be added here when another TalentIQ service
+	// needs to react to this event.
+	//
+	// For now, the handler only validates the event flow
+	// and records structured logs.
+
+	return nil
+}
