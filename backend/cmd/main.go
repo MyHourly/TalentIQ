@@ -98,60 +98,59 @@ func main() {
 		"Database connected successfully",
 	)
 
-	// --------------------------------------------------
 	// Skill Repository
-	// --------------------------------------------------
 
 	skillRepository :=
 		repository.NewPostgresSkillRepository(db)
 
-	// --------------------------------------------------
 	// Skill Service
-	// --------------------------------------------------
 
 	skillService :=
 		service.NewSkillService(skillRepository)
 
-	// --------------------------------------------------
 	// Skill Handler
-	// --------------------------------------------------
 
 	skillHandler :=
 		handler.NewSkillHandler(skillService)
 
-	// --------------------------------------------------
 	// Category Repository
-	// --------------------------------------------------
 
 	categoryRepository :=
 		repository.NewPostgresCategoryRepository(db)
 
-	// --------------------------------------------------
 	// Category Service
-	// --------------------------------------------------
 
 	categoryService :=
 		service.NewCategoryService(categoryRepository)
 
-	// --------------------------------------------------
 	// Category Handler
-	// --------------------------------------------------
 
 	categoryHandler :=
 		handler.NewCategoryHandler(categoryService)
 
-	// --------------------------------------------------
+	// Proficiency Repository
+
+	proficiencyRepository :=
+		repository.NewProficiencyRepository(db)
+
+	// Proficiency Service
+
+	proficiencyService :=
+		service.NewProficiencyService(proficiencyRepository)
+
+	// Proficiency Handler
+
+	proficiencyHandler :=
+		handler.NewProficiencyHandler(proficiencyService)
+
 	// Health Check
-	// --------------------------------------------------
 
 	http.HandleFunc(
 		"/health",
 		healthHandler,
 	)
 
-	// --------------------------------------------------
 	// Category Routes
-	// --------------------------------------------------
 
 	// POST and GET categories.
 	http.HandleFunc(
@@ -176,9 +175,52 @@ func main() {
 		},
 	)
 
-	// --------------------------------------------------
+	// Proficiency Routes
+
+	// POST and GET all proficiencies.
+	http.HandleFunc(
+		"/api/v1/proficiencies",
+		func(w http.ResponseWriter, r *http.Request) {
+
+			switch r.Method {
+
+			case http.MethodPost:
+				proficiencyHandler.CreateProficiency(w, r)
+
+			case http.MethodGet:
+				proficiencyHandler.GetAllProficiencies(w, r)
+
+			default:
+				http.Error(
+					w,
+					"Method not allowed",
+					http.StatusMethodNotAllowed,
+				)
+			}
+		},
+	)
+
+	// GET proficiency by ID.
+	http.HandleFunc(
+		"/api/v1/proficiencies/",
+		func(w http.ResponseWriter, r *http.Request) {
+
+			switch r.Method {
+
+			case http.MethodGet:
+				proficiencyHandler.GetProficiencyByID(w, r)
+
+			default:
+				http.Error(
+					w,
+					"Method not allowed",
+					http.StatusMethodNotAllowed,
+				)
+			}
+		},
+	)
+
 	// Skill Routes
-	// --------------------------------------------------
 
 	// POST and GET all skills.
 	http.HandleFunc(
@@ -203,15 +245,18 @@ func main() {
 		},
 	)
 
-	// --------------------------------------------------
-	// Skill ID and Skill Category Routes
-	// --------------------------------------------------
+	// Skill ID, Category and Proficiency Routes
 
 	http.HandleFunc(
 		"/api/v1/skills/",
 		func(w http.ResponseWriter, r *http.Request) {
 
-			// Example:
+			// Skill Category Routes
+			//
+			// POST:
+			// /api/v1/skills/{skill_id}/categories
+			//
+			// GET:
 			// /api/v1/skills/{skill_id}/categories
 
 			if strings.HasSuffix(
@@ -244,7 +289,53 @@ func main() {
 				return
 			}
 
-			// Example:
+			// Skill Proficiency Routes
+			//
+			// POST:
+			// /api/v1/skills/{skill_id}/proficiency
+			//
+			// GET:
+			// /api/v1/skills/{skill_id}/proficiency
+
+			if strings.HasSuffix(
+				r.URL.Path,
+				"/proficiency",
+			) {
+
+				switch r.Method {
+
+				case http.MethodPost:
+					proficiencyHandler.AssignProficiencyToSkill(
+						w,
+						r,
+					)
+
+				case http.MethodGet:
+					proficiencyHandler.GetProficiencyBySkillID(
+						w,
+						r,
+					)
+
+				default:
+					http.Error(
+						w,
+						"Method not allowed",
+						http.StatusMethodNotAllowed,
+					)
+				}
+
+				return
+			}
+
+			// Skill ID Routes
+			//
+			// GET:
+			// /api/v1/skills/{skill_id}
+			//
+			// PUT:
+			// /api/v1/skills/{skill_id}
+			//
+			// DELETE:
 			// /api/v1/skills/{skill_id}
 
 			switch r.Method {
@@ -268,9 +359,7 @@ func main() {
 		},
 	)
 
-	// --------------------------------------------------
 	// Server
-	// --------------------------------------------------
 
 	fmt.Println(
 		"TalentIQ Backend started",
