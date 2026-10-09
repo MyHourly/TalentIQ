@@ -77,7 +77,7 @@ func main() {
 		appLogger.Logger,
 	)
 
-	// Close Kafka producer when the application exits.
+	// Close Kafka producer when application exits.
 	defer func() {
 		if err := eventPublisher.Close(); err != nil {
 			appLogger.Error(
@@ -100,6 +100,41 @@ func main() {
 	// Create Talent Profile repository.
 	talentProfileRepository :=
 		repository.NewTalentProfileRepository(
+			db,
+			appLogger.Logger,
+		)
+
+	// Create Talent Preference repository.
+	talentPreferenceRepository :=
+		repository.NewTalentPreferenceRepository(
+			db,
+			appLogger.Logger,
+		)
+
+	// TPI-015: Create Talent Skill repository.
+	talentSkillRepository :=
+		repository.NewTalentSkillRepository(
+			db,
+			appLogger.Logger,
+		)
+
+	// TPI-016: Create Talent Certification repository.
+	talentCertificationRepository :=
+		repository.NewTalentCertificationRepository(
+			db,
+			appLogger.Logger,
+		)
+
+	// TPI-017: Create Talent Project repository.
+	talentProjectRepository :=
+		repository.NewTalentProjectRepository(
+			db,
+			appLogger.Logger,
+		)
+
+	// TPI-018: Create Talent Experience repository.
+	talentExperienceRepository :=
+		repository.NewTalentExperienceRepository(
 			db,
 			appLogger.Logger,
 		)
@@ -152,18 +187,12 @@ func main() {
 			talentProfileEventService,
 			appLogger.Logger,
 		)
+
 	eventDispatcher.RegisterHandler(
 		"candidate.profile.updated",
 		profileUpdatedHandler,
 	)
 
-	// ---------------------------------------------------------
-	// Profile Deactivated Handler
-	// ---------------------------------------------------------
-
-	// The deactivated handler currently uses its existing
-	// implementation. Business processing will be added
-	// in a later lesson.
 	// ---------------------------------------------------------
 	// Profile Deactivated Handler
 	// ---------------------------------------------------------
@@ -181,8 +210,6 @@ func main() {
 		profileDeactivatedHandler,
 	)
 
-	 
-
 	// ---------------------------------------------------------
 	// Kafka Consumer
 	// ---------------------------------------------------------
@@ -199,7 +226,7 @@ func main() {
 		eventDispatcher,
 	)
 
-	// Close Kafka consumer when the application exits.
+	// Close Kafka consumer when application exits.
 	defer func() {
 		if err := kafkaConsumer.Close(); err != nil {
 			appLogger.Error(
@@ -251,6 +278,76 @@ func main() {
 		)
 
 	// ---------------------------------------------------------
+	// Talent Preference Service
+	// ---------------------------------------------------------
+
+	// Create Talent Preference service.
+	//
+	// This service handles the business logic for
+	// talent preferences and availability.
+	talentPreferenceService :=
+		service.NewTalentPreferenceService(
+			talentPreferenceRepository,
+			appLogger.Logger,
+		)
+
+	// ---------------------------------------------------------
+	// Talent Skill Service
+	// ---------------------------------------------------------
+
+	// TPI-015: Create Talent Skill service.
+	//
+	// This service handles the business rules for adding,
+	// updating and removing a talent's skills.
+	talentSkillService :=
+		service.NewTalentSkillService(
+			talentSkillRepository,
+			appLogger.Logger,
+		)
+
+	// ---------------------------------------------------------
+	// Talent Certification Service
+	// ---------------------------------------------------------
+
+	// TPI-016: Create Talent Certification service.
+	//
+	// This service validates certification details and
+	// decides the certification status (ACTIVE / EXPIRED).
+	talentCertificationService :=
+		service.NewTalentCertificationService(
+			talentCertificationRepository,
+			appLogger.Logger,
+		)
+
+	// ---------------------------------------------------------
+	// Talent Project Service
+	// ---------------------------------------------------------
+
+	// TPI-017: Create Talent Project service.
+	//
+	// This service validates project details, adds a project
+	// for a talent, and marks it completed.
+	talentProjectService :=
+		service.NewTalentProjectService(
+			talentProjectRepository,
+			appLogger.Logger,
+		)
+
+	// ---------------------------------------------------------
+	// Talent Experience Service
+	// ---------------------------------------------------------
+
+	// TPI-018: Create Talent Experience service.
+	//
+	// This service validates a job (company, title, dates)
+	// before it is saved in the talent's work history.
+	talentExperienceService :=
+		service.NewTalentExperienceService(
+			talentExperienceRepository,
+			appLogger.Logger,
+		)
+
+	// ---------------------------------------------------------
 	// HTTP Handler
 	// ---------------------------------------------------------
 
@@ -258,6 +355,45 @@ func main() {
 	talentProfileHandler :=
 		handler.NewTalentProfileHandler(
 			talentProfileService,
+			appLogger.Logger,
+		)
+
+	// Create Talent Preference HTTP handler.
+	//
+	// The same handler also handles the Talent Availability
+	// endpoint because availability is stored in the existing
+	// talent_preferences table.
+	talentPreferenceHandler :=
+		handler.NewTalentPreferenceHandler(
+			talentPreferenceService,
+			appLogger.Logger,
+		)
+
+	// TPI-015: Create Talent Skill HTTP handler.
+	talentSkillHandler :=
+		handler.NewTalentSkillHandler(
+			talentSkillService,
+			appLogger.Logger,
+		)
+
+	// TPI-016: Create Talent Certification HTTP handler.
+	talentCertificationHandler :=
+		handler.NewTalentCertificationHandler(
+			talentCertificationService,
+			appLogger.Logger,
+		)
+
+	// TPI-017: Create Talent Project HTTP handler.
+	talentProjectHandler :=
+		handler.NewTalentProjectHandler(
+			talentProjectService,
+			appLogger.Logger,
+		)
+
+	// TPI-018: Create Talent Experience HTTP handler.
+	talentExperienceHandler :=
+		handler.NewTalentExperienceHandler(
+			talentExperienceService,
 			appLogger.Logger,
 		)
 
@@ -281,13 +417,19 @@ func main() {
 	)
 
 	// ---------------------------------------------------------
-	// Versioned Talent Profile API
+	// Versioned APIs
 	// ---------------------------------------------------------
 
 	v1 := router.Group("/api/v1")
 	{
+
+		// -----------------------------------------------------
+		// Talent Profile APIs
+		// -----------------------------------------------------
+
 		talentProfiles := v1.Group("/talent-profiles")
 		{
+
 			// Create talent profile.
 			talentProfiles.POST(
 				"",
@@ -316,6 +458,88 @@ func main() {
 			talentProfiles.DELETE(
 				"/:id",
 				talentProfileHandler.Delete,
+			)
+
+			// -------------------------------------------------
+			// Talent Preference APIs
+			// -------------------------------------------------
+
+			// Create talent preferences.
+			talentProfiles.POST(
+				"/:id/preferences",
+				talentPreferenceHandler.Create,
+			)
+
+			// Get talent preferences.
+			talentProfiles.GET(
+				"/:id/preferences",
+				talentPreferenceHandler.GetByTalentID,
+			)
+
+			// Update talent preferences.
+			talentProfiles.PUT(
+				"/:id/preferences",
+				talentPreferenceHandler.Update,
+			)
+		}
+
+		// -----------------------------------------------------
+		// Talent APIs (client work-plan paths: /api/v1/talents/...)
+		// -----------------------------------------------------
+
+		talents := v1.Group("/talents")
+		{
+
+			// Talent Availability API.
+			//
+			// The availability endpoint follows the client work-plan
+			// path: PATCH /api/v1/talents/:id/availability
+			//
+			// Availability is stored in the existing
+			// talent_preferences.availability_status field.
+			talents.PATCH(
+				"/:id/availability",
+				talentPreferenceHandler.UpdateAvailability,
+			)
+
+			// TPI-015: Add a skill to a talent, or change its
+			// proficiency level if the talent already has that skill.
+			talents.PUT(
+				"/:id/skills/:skillId",
+				talentSkillHandler.Upsert,
+			)
+
+			// TPI-015: Remove a skill from a talent.
+			talents.DELETE(
+				"/:id/skills/:skillId",
+				talentSkillHandler.Remove,
+			)
+
+			// TPI-016: Add a certification to a talent.
+			talents.POST(
+				"/:id/certifications",
+				talentCertificationHandler.Add,
+			)
+
+			// TPI-017: Add a project to a talent.
+			talents.POST(
+				"/:id/projects",
+				talentProjectHandler.Add,
+			)
+
+			// TPI-017: Mark one of the talent's projects as completed.
+			//
+			// NOTE: the wildcard names (:id, :projectId) must match
+			// across routes at the same position, or Gin panics at startup.
+			talents.POST(
+				"/:id/projects/:projectId/complete",
+				talentProjectHandler.Complete,
+			)
+
+			// TPI-018: Add a job to a talent's work history.
+			talents.POST(
+				"/:id/experience",
+				talentExperienceHandler.Add,
 			)
 		}
 	}
